@@ -282,6 +282,76 @@ A wide range of further customization points should be expected. The above descr
 
 By defining these as above in terms of a customization point that calls a method on the executor if that method call is well-formed we can relatively easily extend the API piecemeal with these operations as necessary.
 
+# Callbacks
+
+> Sender and Receiver are a pair of concepts that formally define the very familiar callback pattern.
+
+Callbacks are common in the standard library. `std::visit` is one of many algorithms that take a callback. The `std::thread` constructor takes a callback. Callbacks are fundamental to the Networking TS and Executors proposals.
+
+The callback pattern is so common because a function call has long been the best way to transfer data & execution context and inject behaviours.
+
+## composition challenges
+
+Callbacks are challenging for composition because they all have a different shape. Signatures such as 
+
+- completion/termination - `void()`
+- error and values - `void(auto ec, auto... v)`
+- errors - `void(auto ec)`
+- values - `void(auto... v)` 
+
+all exist and make composition of callbacks a bespoke, repetitive and error-prone task.
+
+Another friction point with the callback pattern, is that the callback itself, takes different positions in the argument list of the functions that take callbacks.
+
+## composition improvements
+
+Composition is improved when callbacks have a regular shape. 
+
+The signals for values, errors and termination are easier to compose when they are separated into different callback functions. Separating the functions allows an error to pass through without touching the value code path, this eliminates branches at each callback that check for errors and reduces the cases for callbacks to forget to check errors or forget to forward errors to the next callback. The default for each signal would be to call the next callback in the expression directly.
+
+Finally, moving the callback out of the argument list of the functions that use callbacks removes another impediment to composition.
+
+## Sender & Receiver
+
+The result of these changes are Concepts that are uniform for all callbacks (Receiver) and uniform for all the operations that depend on callbacks (Sender).
+
+There are many ways to derive Sender and Receiver. The purpose of this derivation from callbacks is to show that one way to think of Sender and Receiver is as a pair of concepts that formally define the very familiar callback pattern.
+
+> Note: A similar derivation from Iterator also exists. In that case Sender/Receiver can be thought of as an Iterator that sends values from a sequence rather than retrieving values from a sequence.
+
+> Note: Another relevant derivation exists from promise/future. In that case it becomes clear that promise has a subset of the signals on a Receiver and that when a Sender is used to implement an operation and the Receiver is used to implement the continuation, there is no need to create a shared promise allocation nor to synchronize the access to the shared promise.
+
+## Example
+
+So much text and so little code! To rectify that here is a simple executor definition (not intended to represent P0443)
+
+```cpp
+struct inline_executor {
+  template<Callback>
+  void execute(Callback c) {
+    c();
+  }
+};
+
+inline_executor{}.execute([]{});
+```
+
+while here, the definition is transformed to use Sender/Receiver 
+
+```cpp
+struct inline_executor {
+  auto execute() {
+    return sender{[c](auto out){set_value(out);set_done(out);}};
+  }
+};
+
+submit(inline_executor{}.execute(), []{});
+```
+
+The same transformations can be made to other functions that use callbacks to make them more efficient and easily composable.
+
+> Note: it is not possible to apply this transformation efficiently to the `async_` functions in the Networking TS with the current definition of the async continuation. The same statement is true for the transformation of the `async_` functions in the Networking TS to coroutines (and for the same reasons). I am however reasonably confident that additive changes to the async continuation will eventually enable these transformations to be made efficiently.
+
 # Q&A
 
 ## Q: What do lazy execution and eager execution mean?
