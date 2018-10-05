@@ -1,5 +1,5 @@
 DOCNO = 1194
-PD = P
+PD = D
 SOURCE = p1194_executor_compromise_the_return.md
 TARGET = $(PD)$(DOCNO)
 
